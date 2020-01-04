@@ -21,28 +21,11 @@ mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true 
     console.log('error connection to MongoDB:', error.message)
   })
 
-/*
-let authors = [
-  {
-    name: 'Robert Martin',
-    born: 1952,
-  },
-  {
-    name: 'Martin Fowler',
-    born: 1963
-  },
-  {
-    name: 'Fyodor Dostoevsky',
-    born: 1821
-  }
-]
-*/
-
 const typeDefs = gql`
   type Author {
     name: String
     born: Int
-    bookCount: Int
+    bookCount: Int!
     id: ID
   }
 
@@ -80,22 +63,21 @@ const resolvers = {
     authorCount: () => Author.collection.countDocuments(),
     bookCount: () => Book.collection.countDocuments(),
     allAuthors: () => Author.find({}),
-    allBooks: () => Book.find({}).populate('author', { name: 1 })
-    /*
-    allBooks: (root, args) => {
+    allBooks: async (root, args) => {
+      const books = await Book.find({}).populate('author', { name: 1 })
+
       if (args.author) {
-        const booksByAuthor = books.filter(book => book.author === args.author)
+        const booksByAuthor = books.filter(book => book.author.name === args.author)
         return booksByAuthor
       }
 
       if (args.genre) {
         const booksByGenre = books.filter(book => book.genres.includes(args.genre))
         return booksByGenre
-      }
+      } 
 
       return books
     }
-    */
   },
   Book: {
     author: root => {
@@ -104,14 +86,12 @@ const resolvers = {
       }
     }
   },
-  /*
   Author: {
-    bookCount: root => {
-        const byAuthor = books.filter(book => book.author === root.name)
+    bookCount: async root => {
+        const byAuthor = await Book.find({ author: root })
         return byAuthor.length
     }
   },
-  */
   Mutation: {
     addBook: async (root, args) => {
       let author = await Author.findOne({ name: args.author })
@@ -129,19 +109,17 @@ const resolvers = {
 
       return book
     },
-    /*
-    editAuthor: (root, args) => {
-      const author = authors.find(author => author.name === args.name)
+    
+    editAuthor: async (root, args) => {
+      const filter = { name: args.name }
+      const update = { born: args.setBornTo }
 
-      if (!author) {
-        return null
-      }
-  
-      const updatedAuthor = { ...author, born: args.setBornTo }
-      authors = authors.map(author => author.name === args.name ? updatedAuthor : author)
-      return updatedAuthor
+      let author = await Author.findOneAndUpdate(filter, update, {
+        new: true
+      })
+
+      return author
     }
-    */  
   }
 }
 

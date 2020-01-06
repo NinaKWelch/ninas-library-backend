@@ -30,18 +30,15 @@ const typeDefs = gql`
     favoriteGenre: String!
     id: ID!
   }
-
   type Token {
     value: String!
   }
-
   type Author {
     name: String
     born: Int
     bookCount: Int!
     id: ID
   }
-
   type Book {
     title: String!
     author: Author!
@@ -49,7 +46,6 @@ const typeDefs = gql`
     genres: [String!]!
     id: ID!
   }
-
   type Query {
     authorCount: Int!
     bookCount: Int!
@@ -57,7 +53,6 @@ const typeDefs = gql`
     allAuthors: [Author!]!
     me: User
   }
-
   type Mutation {
     addBook(
       title: String!
@@ -209,7 +204,7 @@ const server = new ApolloServer({
       const decodedToken = jwt.verify(
         auth.substring(7), JWT_SECRET
       )
-      const currentUser = await User.findById(decodedToken.id)
+      const currentUser = await (await User.findById(decodedToken.id)).populate('favoriteGenre')
       return { currentUser }
     }
   }

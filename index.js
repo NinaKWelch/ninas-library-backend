@@ -1,12 +1,13 @@
 require('dotenv').config()
 
-const { ApolloServer, UserInputError, AuthenticationError, gql, PubSub } = require('apollo-server')
+const { ApolloServer, UserInputError, AuthenticationError, gql } = require('apollo-server')
 const mongoose = require('mongoose')
 const Author = require('./models/author')
 const Book = require('./models/book')
 const User = require('./models/user')
 const jwt = require('jsonwebtoken')
 
+const { PubSub } = require('apollo-server')
 const pubsub = new PubSub()
 
 mongoose.set('useFindAndModify', false)
@@ -18,8 +19,10 @@ const JWT_SECRET = process.env.JWT_SECRET
 
 console.log('connecting to', MONGODB_URI)
 
-mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => {
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => {
     console.log('connected to MongoDB')
   })
   .catch((error) => {
@@ -38,7 +41,7 @@ const typeDefs = gql`
   }
 
   type Author {
-    name: String
+    name: String!
     born: Int
     bookCount: Int!
     id: ID
@@ -47,8 +50,8 @@ const typeDefs = gql`
   type Book {
     title: String!
     author: Author!
-    published: Int!
-    genres: [String!]!
+    published: Int
+    genres: [String]
     id: ID!
   }
 
@@ -64,12 +67,12 @@ const typeDefs = gql`
     addBook(
       title: String!
       author: String!
-      published: Int!
+      published: String!
       genres: [String!]!
     ): Book
     editAuthor(
       name: String!
-      setBornTo: Int!
+      setBornTo: String!
     ): Author
     createUser(
       username: String!
@@ -83,7 +86,7 @@ const typeDefs = gql`
 
   type Subscription {
     bookAdded: Book!
-  }  
+  }
 `
 
 const resolvers = {
@@ -92,7 +95,7 @@ const resolvers = {
     bookCount: () => Book.collection.countDocuments(),
     allAuthors: () => Author.find({}),
     allBooks: async (root, args) => {
-      const books = await Book.find({}).populate('author', { name: 1 })
+      const books = await Book.find({}).populate('author')
 
       if (args.author) {
         const booksByAuthor = books.filter(book => book.author.name === args.author)
@@ -102,7 +105,7 @@ const resolvers = {
       if (args.genre) {
         const booksByGenre = books.filter(book => book.genres.includes(args.genre))
         return booksByGenre
-      } 
+      }
 
       return books
     },
@@ -111,11 +114,7 @@ const resolvers = {
     }
   },
   Book: {
-    author: root => {
-      return {
-        name: root.author.name
-      }
-    }
+    author: root => root.author
   },
   Author: {
     bookCount: async root => {
@@ -126,7 +125,11 @@ const resolvers = {
   Mutation: {
     addBook: async (root, args, { currentUser }) => {
       if (!currentUser) {
-        throw new AuthenticationError("Not authenticated")
+        throw new AuthenticationError('Not authenticated')
+      }
+
+      if ( !args.title || !args.author ) {
+        throw new UserInputError('Book title and Author must be added')
       }
 
       let author = await Author.findOne({ name: args.author })
@@ -140,33 +143,42 @@ const resolvers = {
         try {  
           await author.save()
         } catch (error) {
-          throw new UserInputError(error.message, {
+          throw new UserInputError('Author name too short', {
             invalidArgs: args
           })
         }    
       }
 
-      const book = new Book({ ...args, author: author._id })
+      let book = new Book({
+        ...args,
+        author: author._id,
+        published: args.published ? Number(args.published) : null
+      })
 
       try {  
         await book.save()
       } catch (error) {
-        throw new UserInputError(error.message, {
+        throw new UserInputError('Book title too short', {
           invalidArgs: args
         })
       }
-
+      
+      book = await Book.findOne({ title: args.title }).populate('author')
       pubsub.publish('BOOK_ADDED', { bookAdded: book })
 
       return book
     },
     editAuthor: async (root, args, { currentUser }) => {
       if (!currentUser) {
-        throw new AuthenticationError("Not authenticated")
+        throw new AuthenticationError('Not authenticated')
+      }
+
+      if ( !args.name || !args.setBornTo ) {
+        throw new UserInputError('Author and birthyear must be added')
       }
 
       const author = await Author.findOne({ name: args.name })
-      author.born = args.setBornTo
+      author.born = Number(args.setBornTo)
 
       try {
         await author.save()
@@ -195,7 +207,7 @@ const resolvers = {
       const user = await User.findOne({ username: args.username })
   
       if ( !user || args.password !== 'secret' ) {
-        throw new UserInputError("Wrong credentials")
+        throw new UserInputError('Wrong credentials')
       }
   
       const userForToken = {
@@ -216,14 +228,20 @@ const resolvers = {
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-  context: async ({ req }) => {
-    const auth = req ? req.headers.authorization : null
-    if (auth && auth.toLowerCase().startsWith('bearer ')) {
-      const decodedToken = jwt.verify(
-        auth.substring(7), JWT_SECRET
-      )
-      const currentUser = await (await User.findById(decodedToken.id)).populate('favoriteGenre')
-      return { currentUser }
+  context: async ({ req, connection }) => {
+    // https://www.apollographql.com/docs/apollo-server/data/subscriptions/
+    if (connection) {
+      // check connection for metadata
+      return connection.context
+    } else {
+      const auth = req ? req.headers.authorization : null
+      if (auth && auth.toLowerCase().startsWith('bearer ')) {
+        const decodedToken = jwt.verify(
+          auth.substring(7), JWT_SECRET
+        )
+        const currentUser = await User.findById(decodedToken.id).populate('favouriteGenre')
+        return { currentUser }
+      }
     }
   }
 })

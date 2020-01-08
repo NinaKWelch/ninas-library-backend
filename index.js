@@ -43,7 +43,7 @@ const typeDefs = gql`
   type Author {
     name: String!
     born: Int
-    bookCount: Int!
+    bookCount: Int
     id: ID
   }
 
@@ -113,15 +113,6 @@ const resolvers = {
       return context.currentUser
     }
   },
-  Book: {
-    author: root => root.author
-  },
-  Author: {
-    bookCount: async root => {
-        const byAuthor = await Book.find({ author: root })
-        return byAuthor.length
-    }
-  },
   Mutation: {
     addBook: async (root, args, { currentUser }) => {
       if (!currentUser) {
@@ -129,7 +120,7 @@ const resolvers = {
       }
 
       if ( !args.title || !args.author ) {
-        throw new UserInputError('Book title and Author must be added')
+        throw new UserInputError('Book title and author must be added')
       }
 
       let author = await Author.findOne({ name: args.author })
@@ -137,7 +128,8 @@ const resolvers = {
       if (!author) {
         author = new Author({
           _id: new mongoose.Types.ObjectId(),
-          name: args.author
+          name: args.author,
+          bookCount: 1
         })
 
         try {  
@@ -146,9 +138,19 @@ const resolvers = {
           throw new UserInputError('Author name too short', {
             invalidArgs: args
           })
-        }    
-      }
+        }  
+      } else {
+        author.bookCount = author.bookCount + 1
 
+        try {  
+          await author.save()
+        } catch (error) {
+          throw new UserInputError(error.message, {
+            invalidArgs: args
+          })
+        }
+      }
+      
       let book = new Book({
         ...args,
         author: author._id,

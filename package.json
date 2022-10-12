@@ -15,7 +15,7 @@
   "license": "MIT",
   "homepage": "https://github.com/NinaKWelch/ninas-library-backend#readme",
   "dependencies": {
-    "apollo-server": "^2.11.0",
+    "apollo-server": "^2.25.4",
     "dotenv": "^8.2.0",
     "graphql": "^14.6.0",
     "jsonwebtoken": "^8.5.1",
